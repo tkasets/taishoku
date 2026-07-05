@@ -6,7 +6,7 @@
 <title>退職届ジェネレーター</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@500;700;800&family=Zen+Kaku+Gothic+New:wght@500;700;900&display=swap" rel="stylesheet">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/html-to-image@1.11.13/dist/html-to-image.js"></script>
 <style>
   :root{
     --paper:#F4F4F2;
@@ -219,7 +219,6 @@
   }
 
   .actions{
-    visibility:hidden;
     width:100%;
     max-width:400px;
     margin-top:6px;
@@ -228,7 +227,7 @@
   #saveHint{
     margin:0;
     text-align:center;
-    font-family:'Zen Kaku Gothic New', sans-serif;
+    font-family:'Yu Mincho','YuMincho','Hiragino Mincho ProN','MS Mincho',serif;
     font-weight:700;
     font-size:12px;
     letter-spacing:.04em;
@@ -261,7 +260,7 @@
   </div>
 
   <div class="actions" id="actionsArea">
-    <p id="saveHint">📸 書類を長押しで写真に保存（PCは右クリック）</p>
+    <p id="saveHint">書類を長押しで写真に保存（PCは右クリック）</p>
   </div>
 
 <script>
@@ -299,7 +298,14 @@ let docImage = null, rerenderTimer = null;
 // でき上がった書類を画像化し、元の書類にぴったり重ねて表示する。
 // 表示されるのは本物の<img>なので、長押し（PCは右クリック）で写真に保存できる。
 function renderDocImage(){
-  html2canvas(docCard, {backgroundColor:"#FFFFFF", scale:3}).then(canvas=>{
+  // html-to-image はブラウザ自身の描画(SVG foreignObject)を使うため、縦書きやハンコの位置も正しく保たれる
+  const c = docCard.getBoundingClientRect();
+  htmlToImage.toPng(docCard, {
+    pixelRatio: 3,
+    backgroundColor: '#FFFFFF',
+    width: c.width,
+    height: c.height
+  }).then(dataUrl=>{
     if(phase !== 2) return; // 途中でリセットされたら破棄
     if(!docImage){
       docImage = document.createElement('img');
@@ -307,13 +313,13 @@ function renderDocImage(){
       docImage.alt = '退職届';
       docWrap.appendChild(docImage);
     }
-    const w = docWrap.getBoundingClientRect(), c = docCard.getBoundingClientRect();
-    docImage.src = canvas.toDataURL('image/png');
-    docImage.style.left   = (c.left - w.left) + 'px';
-    docImage.style.top    = (c.top  - w.top ) + 'px';
-    docImage.style.width  = c.width  + 'px';
-    docImage.style.height = c.height + 'px';
-  });
+    const w = docWrap.getBoundingClientRect(), cc = docCard.getBoundingClientRect();
+    docImage.src = dataUrl;
+    docImage.style.left   = (cc.left - w.left) + 'px';
+    docImage.style.top    = (cc.top  - w.top ) + 'px';
+    docImage.style.width  = cc.width  + 'px';
+    docImage.style.height = cc.height + 'px';
+  }).catch(()=>{});
 }
 function removeDocImage(){ if(docImage){ docImage.remove(); docImage = null; } }
 // 氏名などの編集中は一旦ライブ表示に戻し、手が止まったら画像を作り直す
@@ -378,7 +384,6 @@ docWrap.addEventListener('click', ()=>{
 });
 
 function revealFinish(){
-  actionsArea.style.visibility = "visible";
   stamp.classList.remove('show');
   void stamp.offsetWidth;
   setTimeout(()=>{ stamp.classList.add('show'); }, 300);
@@ -388,7 +393,6 @@ function revealFinish(){
 function resetToSpinning(){
   phase = 0;
   pickedA = ""; pickedB = "";
-  actionsArea.style.visibility = "hidden";
   removeDocImage();
   stamp.classList.remove('show');
   startReels();

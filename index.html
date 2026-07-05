@@ -307,7 +307,8 @@ function renderDocImage(){
     pixelRatio: 3,
     backgroundColor: '#FFFFFF',
     width: c.width,
-    height: c.height
+    height: c.height,
+    skipFonts: true // Webフォント取り込みでiOSが失敗するのを回避（本文はシステム明朝で描画される）
   }).then(dataUrl=>{
     if(phase !== 2) return; // 途中でリセットされたら破棄
     if(!docImage){

@@ -301,13 +301,15 @@ let docImage = null, rerenderTimer = null;
 // でき上がった書類を画像化し、元の書類にぴったり重ねて表示する。
 // 表示されるのは本物の<img>なので、長押し（PCは右クリック）で写真に保存できる。
 function renderDocImage(){
+  // offset系はレイアウト上の等倍サイズ（:activeのscaleの影響を受けない）
+  const ow = docCard.offsetWidth, oh = docCard.offsetHeight;
   // html-to-image はブラウザ自身の描画(SVG foreignObject)を使うため、縦書きやハンコの位置も正しく保たれる
-  const c = docCard.getBoundingClientRect();
   htmlToImage.toPng(docCard, {
     pixelRatio: 3,
     backgroundColor: '#FFFFFF',
-    width: c.width,
-    height: c.height,
+    width: ow,
+    height: oh,
+    style: { transform: 'none' }, // :activeのscale(.99)を打ち消し、等倍で撮る
     skipFonts: true // Webフォント取り込みでiOSが失敗するのを回避（本文はシステム明朝で描画される）
   }).then(dataUrl=>{
     if(phase !== 2) return; // 途中でリセットされたら破棄
@@ -317,12 +319,12 @@ function renderDocImage(){
       docImage.alt = '退職届';
       docWrap.appendChild(docImage);
     }
-    const w = docWrap.getBoundingClientRect(), cc = docCard.getBoundingClientRect();
+    // 配置もoffset系（docWrap基準の等倍座標）でぴったり重ねる → ズレない
     docImage.src = dataUrl;
-    docImage.style.left   = (cc.left - w.left) + 'px';
-    docImage.style.top    = (cc.top  - w.top ) + 'px';
-    docImage.style.width  = cc.width  + 'px';
-    docImage.style.height = cc.height + 'px';
+    docImage.style.left   = docCard.offsetLeft + 'px';
+    docImage.style.top    = docCard.offsetTop  + 'px';
+    docImage.style.width  = docCard.offsetWidth  + 'px';
+    docImage.style.height = docCard.offsetHeight + 'px';
   }).catch(()=>{});
 }
 function removeDocImage(){ if(docImage){ docImage.remove(); docImage = null; } }

@@ -55,13 +55,6 @@
     container-type:size;
     position:relative;
   }
-  /* でき上がった書類の画像を、元の書類にぴったり重ねて表示（長押し/右クリックで保存） */
-  #docImage{
-    position:absolute;
-    z-index:5;
-    box-shadow:0 1px 3px rgba(0,0,0,.08), 0 8px 20px rgba(0,0,0,.06);
-    -webkit-touch-callout:default; /* 長押しで「画像を保存」メニューを出す（user-selectは付けないこと） */
-  }
   .doc{
     background:#FFFFFF;
     border:1px solid #C9C9C9;
@@ -224,15 +217,20 @@
     margin-top:6px;
     flex-shrink:0;
   }
-  #saveHint{
-    margin:0;
-    text-align:center;
+  #saveBtn{
+    width:100%;
+    padding:10px 12px;
+    border:1px solid var(--ink);
+    background:var(--ink);
+    color:#fff;
+    border-radius:0;
+    cursor:pointer;
     font-family:'Yu Mincho','YuMincho','Hiragino Mincho ProN','MS Mincho',serif;
     font-weight:700;
-    font-size:12px;
-    letter-spacing:.04em;
-    color:var(--ink-soft);
+    font-size:14px;
+    letter-spacing:.08em;
   }
+  #saveBtn:active{ opacity:.85; }
 </style>
 </head>
 <body>
@@ -260,7 +258,7 @@
   </div>
 
   <div class="actions" id="actionsArea">
-    <p id="saveHint">書類を長押しで写真に保存（PCは右クリック）</p>
+    <button id="saveBtn">この書類を写真に保存</button>
   </div>
 
 <script>
@@ -287,54 +285,43 @@ const givenInput = document.getElementById('givenInput');
 const stamp = document.getElementById('stamp');
 const finishArea = document.getElementById('finishArea');
 const actionsArea = document.getElementById('actionsArea');
-const saveHint = document.getElementById('saveHint');
+const saveBtn = document.getElementById('saveBtn');
 const docCard = document.getElementById('docCard');
 
 let phase = 0; // 0: 両方回転中, 1: Aのみ確定・B回転中, 2: 両方確定
 let pickedA = "", pickedB = "";
 let ivA = null, ivB = null;
-let docImage = null, rerenderTimer = null;
+let prepTimer = null;
+let savedBlob = null, savedFile = null; // 確定後にバックグラウンドで作る保存用画像
 
-// でき上がった書類を画像化し、元の書類にぴったり重ねて表示する。
-// 表示されるのは本物の<img>なので、長押し（PCは右クリック）で写真に保存できる。
-function renderDocImage(){
-  docCard.style.visibility = ''; // 撮影のため確実に表示
-  // offset系はレイアウト上の等倍サイズ
-  const ow = docCard.offsetWidth, oh = docCard.offsetHeight;
-  // html-to-image はブラウザ自身の描画(SVG foreignObject)を使うため、縦書きやハンコの位置も正しく保たれる
-  htmlToImage.toPng(docCard, {
+const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
+  || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
+
+function saveFilename(){ return '退職届_'+pickedA+pickedB+'.png'; }
+
+// 生の書類は一切いじらない（＝画面は絶対にズレない）。
+// 保存用の画像だけをバックグラウンドで用意しておき、保存ボタンで共有シートに渡す。
+function prepareSaveImage(){
+  savedBlob = null; savedFile = null;
+  htmlToImage.toBlob(docCard, {
     pixelRatio: 3,
     backgroundColor: '#FFFFFF',
-    width: ow,
-    height: oh,
-    style: { transform: 'none' }, // :activeのscale(.99)を打ち消し、等倍で撮る
+    width: docCard.offsetWidth,
+    height: docCard.offsetHeight,
+    style: { transform: 'none' },
     skipFonts: true // Webフォント取り込みでiOSが失敗するのを回避（本文はシステム明朝で描画される）
-  }).then(dataUrl=>{
-    if(phase !== 2) return; // 途中でリセットされたら破棄
-    if(!docImage){
-      docImage = document.createElement('img');
-      docImage.id = 'docImage';
-      docImage.alt = '退職届';
-      docWrap.appendChild(docImage);
-    }
-    // 配置もoffset系（docWrap基準の等倍座標）でぴったり重ねる → ズレない
-    docImage.src = dataUrl;
-    docImage.style.left   = docCard.offsetLeft + 'px';
-    docImage.style.top    = docCard.offsetTop  + 'px';
-    docImage.style.width  = docCard.offsetWidth  + 'px';
-    docImage.style.height = docCard.offsetHeight + 'px';
-    docCard.style.visibility = 'hidden'; // 生書類は隠し、画像だけを見せる（二重表示によるズレ知覚を防ぐ）
+  }).then(blob=>{
+    if(phase !== 2 || !blob) return;
+    savedBlob = blob;
+    savedFile = new File([blob], saveFilename(), {type:'image/png'});
   }).catch(()=>{});
 }
-function removeDocImage(){ if(docImage){ docImage.remove(); docImage = null; } docCard.style.visibility = ''; }
-// 氏名などの編集中は一旦ライブ表示に戻し、手が止まったら画像を作り直す
-function refreshDocImage(){
+function clearSavedImage(){ savedBlob = null; savedFile = null; }
+function scheduleRePrepare(){ // 氏名編集などの後に作り直す
   if(phase !== 2) return;
-  removeDocImage();
-  clearTimeout(rerenderTimer);
-  rerenderTimer = setTimeout(renderDocImage, 400);
+  clearTimeout(prepTimer);
+  prepTimer = setTimeout(prepareSaveImage, 400);
 }
-window.addEventListener('resize', refreshDocImage);
 
 function pick(list){ return list[Math.floor(Math.random()*list.length)]; }
 
@@ -392,14 +379,13 @@ function revealFinish(){
   stamp.classList.remove('show');
   void stamp.offsetWidth;
   setTimeout(()=>{ stamp.classList.add('show'); }, 300);
-  renderDocImage();                // すぐ画像化して長押し可能に（この時点ではハンコ未表示）
-  setTimeout(renderDocImage, 800);  // ハンコアニメ後にもう一度作り直してハンコを反映
+  setTimeout(prepareSaveImage, 900); // ハンコアニメ後に保存用画像を用意（表示はしない＝ズレない）
 }
 
 function resetToSpinning(){
   phase = 0;
   pickedA = ""; pickedB = "";
-  removeDocImage();
+  clearSavedImage();
   stamp.classList.remove('show');
   startReels();
 }
@@ -447,7 +433,7 @@ function syncNames(){
     stamp.textContent = "印";
     stamp.style.fontSize = "10px";
   }
-  refreshDocImage(); // 確定後(phase2)に氏名を変えたら画像を作り直す
+  scheduleRePrepare(); // 確定後(phase2)に氏名を変えたら保存用画像を作り直す
 }
 deptInput.addEventListener('input', syncNames);
 surnameInput.addEventListener('input', syncNames);
@@ -456,6 +442,23 @@ syncNames();
 deptInput.addEventListener('click', (e)=> e.stopPropagation());
 surnameInput.addEventListener('click', (e)=> e.stopPropagation());
 givenInput.addEventListener('click', (e)=> e.stopPropagation());
+
+// 保存ボタン: 書類は触らず、用意済みの画像を共有シート(iOS)／ダウンロード(PC)で保存
+saveBtn.addEventListener('click', (e)=>{
+  e.stopPropagation();
+  if(phase !== 2){ return; } // 書類が確定してから
+  if(isMobile && savedFile && navigator.canShare && navigator.canShare({files:[savedFile]})){
+    navigator.share({files:[savedFile], title:savedFile.name}).catch(()=>{});
+  } else if(savedBlob){
+    const url = URL.createObjectURL(savedBlob);
+    const a = document.createElement('a');
+    a.download = saveFilename();
+    a.href = url; a.click();
+    setTimeout(()=>URL.revokeObjectURL(url), 1000);
+  } else {
+    prepareSaveImage(); // まだ用意できていなければ作る（もう一度タップで保存）
+  }
+});
 </script>
 </body>
 </html>

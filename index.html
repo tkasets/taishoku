@@ -409,15 +409,33 @@ deptInput.addEventListener('click', (e)=> e.stopPropagation());
 surnameInput.addEventListener('click', (e)=> e.stopPropagation());
 givenInput.addEventListener('click', (e)=> e.stopPropagation());
 
+const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
+  || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1); // iPadOSはMac扱いになる
+
 saveBtn.addEventListener('click', (e)=>{
   e.stopPropagation();
   saveBtn.textContent = "保存中…";
   html2canvas(document.getElementById('docCard'), {backgroundColor:"#FFFFFF", scale:3}).then(canvas=>{
-    const link = document.createElement('a');
-    link.download = '退職届_'+pickedA+pickedB+'.png';
-    link.href = canvas.toDataURL('image/png');
-    link.click();
-    saveBtn.textContent = "画像で保存";
+    const filename = '退職届_'+pickedA+pickedB+'.png';
+    canvas.toBlob((blob)=>{
+      if(!blob){ saveBtn.textContent = "画像で保存"; return; }
+      const file = new File([blob], filename, {type:'image/png'});
+      // iOS等: 共有シート経由（「画像を保存」で写真アプリに保存できる）
+      if(isMobile && navigator.canShare && navigator.canShare({files:[file]})){
+        navigator.share({files:[file], title:filename})
+          .catch(()=>{}) // キャンセルは無視
+          .finally(()=>{ saveBtn.textContent = "画像で保存"; });
+      } else {
+        // PC等: 通常のダウンロード
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.download = filename;
+        link.href = url;
+        link.click();
+        setTimeout(()=>URL.revokeObjectURL(url), 1000);
+        saveBtn.textContent = "画像で保存";
+      }
+    }, 'image/png');
   });
 });
 </script>

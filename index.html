@@ -53,9 +53,16 @@
     align-items:center;
     justify-content:center;
     container-type:size;
+    position:relative;
   }
   .doc-wrap:active .doc{
     transform:scale(.99);
+  }
+  /* でき上がった書類の画像を、元の書類にぴったり重ねて表示（長押し/右クリックで保存） */
+  #docImage{
+    position:absolute;
+    z-index:5;
+    box-shadow:0 1px 3px rgba(0,0,0,.08), 0 8px 20px rgba(0,0,0,.06);
   }
   .doc{
     background:#FFFFFF;
@@ -218,17 +225,14 @@
     margin-top:6px;
     flex-shrink:0;
   }
-  .actions button{
-    width:100%;
-    padding:6px 10px;
-    border-radius:0;
+  #saveHint{
+    margin:0;
+    text-align:center;
     font-family:'Zen Kaku Gothic New', sans-serif;
     font-weight:700;
-    font-size:11px;
-    cursor:pointer;
-    border:1px solid var(--ink);
-    background:var(--ink);
-    color:#fff;
+    font-size:12px;
+    letter-spacing:.04em;
+    color:var(--ink-soft);
   }
 </style>
 </head>
@@ -257,7 +261,7 @@
   </div>
 
   <div class="actions" id="actionsArea">
-    <button id="saveBtn">画像で保存</button>
+    <p id="saveHint">📸 書類を長押しで写真に保存（PCは右クリック）</p>
   </div>
 
 <script>
@@ -284,11 +288,42 @@ const givenInput = document.getElementById('givenInput');
 const stamp = document.getElementById('stamp');
 const finishArea = document.getElementById('finishArea');
 const actionsArea = document.getElementById('actionsArea');
-const saveBtn = document.getElementById('saveBtn');
+const saveHint = document.getElementById('saveHint');
+const docCard = document.getElementById('docCard');
 
 let phase = 0; // 0: 両方回転中, 1: Aのみ確定・B回転中, 2: 両方確定
 let pickedA = "", pickedB = "";
 let ivA = null, ivB = null;
+let docImage = null, rerenderTimer = null;
+
+// でき上がった書類を画像化し、元の書類にぴったり重ねて表示する。
+// 表示されるのは本物の<img>なので、長押し（PCは右クリック）で写真に保存できる。
+function renderDocImage(){
+  html2canvas(docCard, {backgroundColor:"#FFFFFF", scale:3}).then(canvas=>{
+    if(phase !== 2) return; // 途中でリセットされたら破棄
+    if(!docImage){
+      docImage = document.createElement('img');
+      docImage.id = 'docImage';
+      docImage.alt = '退職届';
+      docWrap.appendChild(docImage);
+    }
+    const w = docWrap.getBoundingClientRect(), c = docCard.getBoundingClientRect();
+    docImage.src = canvas.toDataURL('image/png');
+    docImage.style.left   = (c.left - w.left) + 'px';
+    docImage.style.top    = (c.top  - w.top ) + 'px';
+    docImage.style.width  = c.width  + 'px';
+    docImage.style.height = c.height + 'px';
+  });
+}
+function removeDocImage(){ if(docImage){ docImage.remove(); docImage = null; } }
+// 氏名などの編集中は一旦ライブ表示に戻し、手が止まったら画像を作り直す
+function refreshDocImage(){
+  if(phase !== 2) return;
+  removeDocImage();
+  clearTimeout(rerenderTimer);
+  rerenderTimer = setTimeout(renderDocImage, 400);
+}
+window.addEventListener('resize', refreshDocImage);
 
 function pick(list){ return list[Math.floor(Math.random()*list.length)]; }
 
@@ -347,12 +382,14 @@ function revealFinish(){
   stamp.classList.remove('show');
   void stamp.offsetWidth;
   setTimeout(()=>{ stamp.classList.add('show'); }, 300);
+  setTimeout(renderDocImage, 800); // 印鑑アニメ後に画像化して重ねる
 }
 
 function resetToSpinning(){
   phase = 0;
   pickedA = ""; pickedB = "";
   actionsArea.style.visibility = "hidden";
+  removeDocImage();
   stamp.classList.remove('show');
   startReels();
 }
@@ -400,6 +437,7 @@ function syncNames(){
     stamp.textContent = "印";
     stamp.style.fontSize = "10px";
   }
+  refreshDocImage(); // 確定後(phase2)に氏名を変えたら画像を作り直す
 }
 deptInput.addEventListener('input', syncNames);
 surnameInput.addEventListener('input', syncNames);
@@ -408,60 +446,6 @@ syncNames();
 deptInput.addEventListener('click', (e)=> e.stopPropagation());
 surnameInput.addEventListener('click', (e)=> e.stopPropagation());
 givenInput.addEventListener('click', (e)=> e.stopPropagation());
-
-const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
-  || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1); // iPadOSはMac扱いになる
-
-// HTTPSが無い/共有不可のiOS等: 画像を全画面表示し、長押し→「写真に追加」で保存してもらう
-function showImageOverlay(dataUrl){
-  const ov = document.createElement('div');
-  ov.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.85);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:20px;';
-  const cap = document.createElement('div');
-  cap.textContent = '画像を長押し →「写真に追加」で保存';
-  cap.style.cssText = 'color:#fff;font-size:14px;font-weight:700;letter-spacing:.04em;text-align:center;';
-  const img = document.createElement('img');
-  img.src = dataUrl;
-  img.style.cssText = 'max-width:100%;max-height:74vh;box-shadow:0 8px 30px rgba(0,0,0,.5);';
-  const close = document.createElement('div');
-  close.textContent = '閉じる';
-  close.style.cssText = 'color:#fff;font-size:12px;opacity:.85;border:1px solid rgba(255,255,255,.5);padding:8px 22px;';
-  ov.appendChild(cap); ov.appendChild(img); ov.appendChild(close);
-  ov.addEventListener('click', (ev)=>{ if(ev.target !== img){ document.body.removeChild(ov); } });
-  document.body.appendChild(ov);
-}
-
-saveBtn.addEventListener('click', (e)=>{
-  e.stopPropagation();
-  saveBtn.textContent = "保存中…";
-  html2canvas(document.getElementById('docCard'), {backgroundColor:"#FFFFFF", scale:3}).then(canvas=>{
-    const filename = '退職届_'+pickedA+pickedB+'.png';
-    const dataUrl = canvas.toDataURL('image/png');
-    canvas.toBlob((blob)=>{
-      saveBtn.textContent = "画像で保存";
-      const file = blob ? new File([blob], filename, {type:'image/png'}) : null;
-      // ① iOS/Android + HTTPS: 共有シート（「画像を保存」で写真アプリへ）
-      if(isMobile && file && navigator.canShare && navigator.canShare({files:[file]})){
-        navigator.share({files:[file], title:filename}).catch((err)=>{
-          if(err && err.name === 'AbortError') return; // ユーザーがキャンセル
-          showImageOverlay(dataUrl);                   // 共有失敗時は長押し保存へ
-        });
-      }
-      // ② スマホだが共有不可(HTTP等): 長押しで写真に追加
-      else if(isMobile){
-        showImageOverlay(dataUrl);
-      }
-      // ③ PC: 通常のダウンロード
-      else if(blob){
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.download = filename;
-        link.href = url;
-        link.click();
-        setTimeout(()=>URL.revokeObjectURL(url), 1000);
-      }
-    }, 'image/png');
-  });
-});
 </script>
 </body>
 </html>

@@ -63,6 +63,9 @@
     position:absolute;
     z-index:5;
     box-shadow:0 1px 3px rgba(0,0,0,.08), 0 8px 20px rgba(0,0,0,.06);
+    -webkit-touch-callout:default; /* 長押しで「画像を保存」メニューを出す */
+    -webkit-user-select:none;
+    user-select:none;
   }
   .doc{
     background:#FFFFFF;
@@ -77,6 +80,8 @@
     flex-direction:column;
     writing-mode:vertical-rl;
     text-orientation:mixed;
+    -webkit-user-select:none; /* 書類の文字を選択不可にし、長押しでテキストコピーされるのを防ぐ */
+    user-select:none;
     box-shadow:0 1px 3px rgba(0,0,0,.08), 0 8px 20px rgba(0,0,0,.06);
     transition:transform .08s ease;
     font-size:2.124cqh;
@@ -387,7 +392,8 @@ function revealFinish(){
   stamp.classList.remove('show');
   void stamp.offsetWidth;
   setTimeout(()=>{ stamp.classList.add('show'); }, 300);
-  setTimeout(renderDocImage, 800); // 印鑑アニメ後に画像化して重ねる
+  renderDocImage();                // すぐ画像化して長押し可能に（この時点ではハンコ未表示）
+  setTimeout(renderDocImage, 800);  // ハンコアニメ後にもう一度作り直してハンコを反映
 }
 
 function resetToSpinning(){
